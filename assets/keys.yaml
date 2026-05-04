@@ -1,0 +1,31 @@
+name: keys
+type: yaml
+shaders: 
+  vert: 
+    layout:
+
+      ins:
+        lyt: triangle_strip 
+        0: {type: vec3 , name: pos}
+        1: {type: vec2 , name: uv }
+      outs: 
+        any: { type: vec3 , name: vuv}
+        
+  tesc: 
+    layout: 
+      opts: [{vertices: 4 }]
+      ins : 
+        any: {type: "vec2[]" , name: vUv}
+
+      sets: 
+        0: {bind: 0, type: size}
+        
+      
+  tese:
+    layout: 
+      opts: [quads,fractional_odd_spacing, ccw]
+        ins :
+          any: {type: "vec2[]" , name: tUv}
+          
+  frag: 
+    

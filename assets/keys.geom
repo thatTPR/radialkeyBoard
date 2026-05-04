@@ -15,7 +15,7 @@ layout (set =0 , binding=1) buffer paths {
 
 layout (set =0 , binding=2) buffer buttons {
     uint size;
-    uvec4 pressed[];
+    uvec4 buttons[];
 }ps;
 
 
