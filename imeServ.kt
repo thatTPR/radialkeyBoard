@@ -68,4 +68,9 @@ class RadialIme : InputMethodService() {
 
         return view
     }
+    ovverride fun onDestroyInputView() : View {
+        nativeClose();
+        super.onDestroyInputView();
+
+    }
 }

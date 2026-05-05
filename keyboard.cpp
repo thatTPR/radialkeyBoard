@@ -183,7 +183,7 @@ struct Layout : lybase<BT>{
     };
     Layout () =default ;
 
-    layout( ,T sTopn, T eTopN, T stopS)
+    // Llayout( T sTopn, T eTopN, T stopS)
     Layout(T _top[2][10] , T _topl[2], T _topc, T lc[2], T ln[2][6], T lf[2][12],
                                                      T rc[2], T rn[2][6], T rf[2][12] ) : 
                                                      top(_top) , topl(_topl) , topCenter(_topc), 
@@ -195,7 +195,7 @@ struct Layout : lybase<BT>{
 template <typename charT>
 struct keyBoard : grpipeline {
 
-    languageDict dict;
+    languagedict dict;
     typedef glm::vec4 uv;
     
     
@@ -218,10 +218,7 @@ struct keyBoard : grpipeline {
         
         
     glm::vec2 uvPressed;
-    void pressed(charT c,float x,float y){
-        atlas.get_range(c)
-
-    }   ; 
+   
     const uint8_t numw = 10;
     const uint8_t numh = 6;
     const float kw = 1/numw;
@@ -258,6 +255,9 @@ struct keyBoard : grpipeline {
     }
     uv space = glm::vec4(kw*4,kh*6,kw*6,kh*7);
 
+    gl::DescriptorPool descpool;
+
+    glm::uvec2 nshift_size;
     std::vector<position> stripsN;
     std::vector<position> stripsShift;
 
@@ -270,9 +270,12 @@ struct keyBoard : grpipeline {
     std::vector<range> NRange;
     std::vector<range> shiftRange;
 
-    std::vector<glm::vec2> pressed ;
+    uint32_t presSize ;
+
+    gl::CommandBuffer cm;
 
 
+    size_t numVerts;
     range getRange(std::vector<range>& rng,charT ch){
         size_t div=rng.size()/2;size_t i;
         for( i = div ;rng[i].ch!=ch; ){
@@ -281,15 +284,15 @@ struct keyBoard : grpipeline {
         };
         return rng[i];
     };
-    void setPressed(std::vector<range>& rng, charT ch){
-        range r= getRange(rng,ch);
-        pressed.resize(r.end-r.start+1) ;
-        std::memcpy( pressed.data() , rng + r.start , (r.end-r.start+1)*sizeof(glm::vec2) );    
-    };
-    void unsetPressed(){pressed.clear();}
-    void getStrips(std::vector<position> pos){
+    
+    pl_base::binding* nshiftsize,ns,shifts,
+        pressed,shift,lsize,lines;
+    gl::DescriptorSet* set0;
+    gl::DescriptorSet* set1;
+    gl::DescriptorPool dpool;
 
-    };
+
+
     void getStrips(){
         poslN = getPositionLayout(0)
         std::vector<glm::vec2> vs;
@@ -304,13 +307,20 @@ struct keyBoard : grpipeline {
         poslShift = getPositionLayout(1);
         iterl(poslShift,shiftRange,stripsShift) ;
     };
-    void swtch(bool shft){
-        if(shft){
-
+    bool shft=false; void shiftPress(){shft!=shft;
+        glsys.ubo(shft,sizeof(bool),cm,shift,descContainer,set1);
+    }
+    glm::uvec2 findRange(charT c, std::vector<range> rng){for(range& r : rng ){if(c==r.ch){return glm::uvec2((uint32_t)r.start,(uint32_t)r.end)} ;}};
+    void pressed(charT c){
+        glm::uvec2 rng;
+        if(c==0){rng=glm::uvec2(0,0);}
+        else {
+            if(shift){rng=findRange(rng,shiftRange);};
+            else {rng =rng=findRange(rng,nRange);  }
         }
-        else {}
-    };
-    bool shift=false; void shiftPress(){shift!=shift;swtch(shift);}
+        glsys.ubo(rng,sizeof(rng),cm,*pressed,descContainer,*set1);
+    }; 
+
     constexpr std::array<glm::mat4x2,12> getTopCexpr(){  
         std::array<glm::mat4x2> res;
         glm::mat4x2 v ={{0,0} ,{kw,0},{kw,kh},{0,kh} } ;
@@ -364,9 +374,16 @@ struct keyBoard : grpipeline {
                 return botr[s-8]        
         }
     };    
+
+    std::vector<glm::vec2 > l0,l1;
   std::vector<charT> chr;bool i0,i1;
     bool cursor=false; float crs;bool cursed;
-    
+    void lines(){
+        l0.emplace_back(-1,-1);l0.append_range(l1);
+            uint32_t size = l0.size();
+            glsys.ubo(size,sizeof(uint32_t),cm,*lsize,descContainer,set1);
+            glsys.ubo(l0.data(),sizeof(glm::vec2)*size,cm,*lines,descContainer,set1);
+    }
     void getChrs(uint8_t* c,size_t& s){
         std::vector<uint8_t> chrs;
         for(size_t i=1;i<chrs.size();i++){
@@ -384,6 +401,7 @@ struct keyBoard : grpipeline {
         if(id==1){p1.push_back(glm::vec2(x,y));i1=true;};
     };
     char* up(jint id,jfloat x,jfloat y,char* c,bool* b){
+        pressed(0);
         if((y>kh>6) and ((x>kw*4 ) && (x<kw*6))){if(!cursed){return " ";}}
         
         if(cursor){cursor=false;return;};
@@ -391,6 +409,7 @@ struct keyBoard : grpipeline {
 
         if( i0 ^ i1) {
             solve(chr.data(),chr.size());*b=true;i0=false;i1=false;
+            lines();
             return cs; }
         else {
             if(id==0){i0=false;};
@@ -399,7 +418,7 @@ struct keyBoard : grpipeline {
     };
     jint _move(jint id,jfloat x,jfloat y){
         if(cursor==true){if(glm::abs(x-crs) > (kw/4)) ?  (x-crs )<0 ?-1:1 : 0  ;return;}
-        glm::vec2 v = glm::vec2(x,y);
+        glm::vec2 v = glm::vec2(x,y);if(id==0){l0.push_back(v);}else{l1.push_back(v);};
         if(glm::distance(v,lc)<=kw*2.5 || glm::distance(v,rc)<=kw*1.5 ){chr.push_back(getPos(x,y););}
         if(id==0){ glm::vec2 v(x,y);if(rsd<glm::distance(v,p0.back()) || !i0) {ps.emplace_back(0,p0.size());p0.emplace_back(x,y); } ;i0=true;};
         if(id==1){ glm::vec2 v(x,y);if(rsd<glm::distance(v,p1.back()) || !i1) {ps.emplace_back(1,p1.size());p1.emplace_back(x,y); } ;i1=true;};
@@ -418,7 +437,9 @@ struct keyBoard : grpipeline {
             positions[]
         };
     };
-    keyBoard(std::string& str,charT _start,charT _end, AAsetManager* asman){
+    keyBoard(gl::ComandPool& cpool,Layout lyt,ttf::font& fnt , languagedict ldict,charT _start,charT _end, float width,float height){
+        fontLayout(lyt,fnt,_start,_end);
+        dict=ldict;
         auto lsm = [&](gl::shader_type t, char* codep) ->shaderModule {
 
         AAsset* asset = AAsetManager_open(asman,codep,ASSET_MODE_BUFFER) ;
@@ -427,33 +448,82 @@ struct keyBoard : grpipeline {
         AAset_read(asset,c,csize) ;
         shaderModule sm;sm.loadCode(c,csize);sm.sty=t; 
         AAset_close(asset);
+            return sm;
     };
-        shaderModule vert= lsm(gl::shader_type::vert , "key.vert.spv");
-        shaderModule frag = lsm(gl::shader_type::frag, "key.frag.spv");
+    
+    primasm.topology=gl::PrimitiveTopology::TRIANGLE_STRIP ;
+    primasm.primrestart=true;
+    viewPortDynamic = false;
+    addViewPort(mod::gr_base::viewport{.x=0,.y=0,.maxDepth=1.0,.minDepth=0.0,.width=width,.height=height}) ;
+    
+    shaderModule vert= lsm(gl::shader_type::vert , "key.vert.spv");
+    shaderModule frag = lsm(gl::shader_type::frag, "key.frag.spv");
+    addVertexDescriptions<glm::vec2,glm::vec2>(0);
+        emplace_set()
 
+        auto bindl = [&](uint32_t set,uint32_t binding,pl_base::binding* bind){
+            pl_base::binding bnd{.dt = gl::DescriptorType::UNIFORM_BUFFER,.set=set,.binding=binding}; 
+            push_binding(bnd);
+            bind = &(sets.back().back());
+
+        };
+        bindl(0,0,nshiftsize);
+        bindl(0,1,ns);
+        bindl(0,2,shifts);
+        emplace_set();
+        bindl(1,0,pressed);
+        bindl(1,1,presbool);
+        bindl(1,2,shift);
+        bindl(1,3,lsize);
+        bindl(1,4,lines);
+              
         grpipeline({&vert,&frag}) ;
         dict=languageDict(str);init(_start,_end);
-    }
 
+        
+        cm=glsys.CreateCmdBuffer(cpool);
+        dpool = glsys.create_descriptor_pool(sets);
+        set0 = glsys.allocate_descriptor_set(descContainer.pSetLayouts[0]);
+        set1 = glsys.allocate_descriptor_set(descContainer.pSetLayouts[1]);
 
+        nshift_size=glm::uvec2((uint32_t)stripsN.size(),(uint32_t)stripsShift.size());
+        glsys.ubo(nshift_size,sizeof(glm::uvec2) , cm,*nsfhitsize,descContainer,set0) ;
+        glsys.ubo(stripsN.data(),sizeof(glm::vec2)* stripsN.size() ,*cm, *ns,descContainer,set0);
+        glsys.ubo(stripsShift.data(),sizeof(glm::vec2)* stripsShift.size() ,*cm, *ns,descContainer,set0);
+        beginCmdBuffer(cm);
+        shift=false;swtch();
+    };
+
+    void exec(){
+        
+        
+        glsys.draw(cm,numVerts);
+    
+    };
 };
 
 struct emojiPanel {
-
+    void exec();
 };
 
 AAssetManager* gAssetManager;
 
 
-struct widget : mod::grpipeline {
+struct widget : mod::pipelines {
+        gl::ComandPool cpool;
+
     keyBoard main ;
     keyBoard emoji;
 
     ttf::font ft;
+    Layout lyt;
     
+    languagedict dict;
     void _setFont(std::string& st){
         std::stringstream str(st);
-        acqres<ft>::read(ft , str) ;};
+        acqres<ft>::read(ft , str);lyt = Layout() ;
+         ;
+    };
     void read(char* str ,void (*ptr)(std::string&) ){
         AAsset* asset = AAssetManager_open(
         gAssetManager,
@@ -468,21 +538,48 @@ struct widget : mod::grpipeline {
 
     AAsset_read(asset, buffer.data(), size);
     AAsset_close(asset);ptr(buffer);  
-    }   ; 
-    void _setdict(std::string& st){
-        main= keyBoard<char>(st,0,0xFF);
-    };
-    void readdict(char* str  ) {
-        read(str,_setdict);
-    };
+    }; 
+    
+    void _setdict(std::string& st){dict=languagedict(st);};
+    void readdict(char* str  ) {read(str,_setdict);};
     void setFont(char* str){read(str,_setFont);};
-    void init(){setFont("NotoSerif-Light.ttf") ;
+
+    bool imeOpen ;
+    bool mainOpen;
+
+    float w,h;
+
+    void down(jint id,jfloat x,jfloat y){
+       if(mainOpen){main.down(id,x,y);}
+       else{emoji.down(id,x,y);}
+    };
+    char* up(jint id,jfloat x,jfloat y,char* c,bool* b){
+       if(mainOpen){return main.down(id,x,y);}
+       else{return emoji.down(id,x,y);}
+    };
+    jint move(jint id,jfloat x,jfloat y){
+       if(mainOpen){return main.move(id,x,y);}
+       else{return emoji.move(id,x,y);}
+    }
+
+    
+
+    void exec(){
+        while(imeOpen){
+            if (mainOpen){main.exec();};
+            else emoji.exec();
+        };
+    };
+    void init(float width , float height){imeOpen=true;w=width;h=height;
+        lyt = Layout()
+        cpool=glsys.CreateCommandPool();
+        setFont("NotoSerif-Light.ttf") ;
         readdict("words.txt") ;
 
-        main.fontLayout(Layout() , ft,0,0xFF , gAssetManager) ; 
-
-        mod::grpipeline()
-        };
+        main = keyBoard<char>(cpool,lyt,ft,st,0,0xFF,w,h);
+        mainOpen=true;        
+        exec();
+    };
 };
 
 
@@ -492,11 +589,14 @@ JNIEnv* env;
 extern "C" JNIEXPORT void JNICALL
 android_view_im_nativeInit(JNIEnv* e, jobject thiz ,jobject surface , jobject assetManager) {env=e; 
     sys.window = ANativeWindow_fromSurface(e,surface) ;
-
 gAssetManager = AAssetManager_fromJava(env, assetManager);
+    w.init(ANativeWindow_getHeight(sys.window),
+ANativeWindow_getWidth(sys.height)) ;
+};
 
-    
-    pl.initialize();  w.init() ;
+
+extern "C" JNIEXPORT void JNICALL
+android_view_im_nativeClose(JNIEnv* e, jobject thiz ) {w.imeOpen=false;
 };
 
 
